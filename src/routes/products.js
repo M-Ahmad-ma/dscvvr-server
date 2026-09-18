@@ -10,6 +10,7 @@ const {
   getCategories,
   saveProduct,
   unsaveProduct,
+  globalSearch,
 } = require("../controllers/productController");
 const {
   addReview,
@@ -87,6 +88,8 @@ const router = express.Router();
  *         description: Invalid filter parameters
  */
 router.get("/search", searchProducts);
+
+router.get("/global-search", globalSearch);
 
 /**
  * @swagger

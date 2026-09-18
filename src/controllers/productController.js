@@ -328,6 +328,74 @@ const unsaveProduct = async (req, res) => {
   }
 };
 
+const globalSearch = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || !q.trim()) {
+      return res.json({ products: [], reviews: [], reviewers: [], categories: [] });
+    }
+
+    const term = `%${q}%`;
+
+    const [productsResult, reviewsResult, reviewersResult, categoriesResult] = await Promise.all([
+      pool.query(
+        `SELECT p.id, p.name, p.image_url, p.category,
+                COALESCE(ROUND(AVG((r.build_integrity + r.longevity + r.value_ratio)::DECIMAL / 3), 1), 0) AS avg_rating
+         FROM products p
+         LEFT JOIN reviews r ON p.id = r.product_id AND r.status = 'PUBLISHED'
+         WHERE p.name ILIKE $1 OR p.category ILIKE $1 OR p.description ILIKE $1
+         GROUP BY p.id
+         ORDER BY p.name
+         LIMIT 10`,
+        [term]
+      ),
+      pool.query(
+        `SELECT r.id, r.review_text, r.created_at, r.product_id,
+                u.name AS reviewer_name, u.avatar_url AS reviewer_avatar,
+                p.name AS product_name, p.image_url AS product_image_url
+         FROM reviews r
+         JOIN users u ON r.user_id = u.id
+         JOIN products p ON r.product_id = p.id
+         WHERE r.status = 'PUBLISHED' AND (r.review_text ILIKE $1 OR p.name ILIKE $1)
+         ORDER BY r.created_at DESC
+         LIMIT 10`,
+        [term]
+      ),
+      pool.query(
+        `SELECT DISTINCT u.id, u.name, u.avatar_url, u.role,
+                COUNT(r.id) AS review_count
+         FROM users u
+         JOIN reviews r ON u.id = r.user_id AND r.status = 'PUBLISHED'
+         WHERE u.name ILIKE $1
+         GROUP BY u.id
+         ORDER BY review_count DESC
+         LIMIT 10`,
+        [term]
+      ),
+      pool.query(
+        `SELECT DISTINCT p.category AS name,
+                COUNT(p.id) AS product_count
+         FROM products p
+         WHERE p.category ILIKE $1
+         GROUP BY p.category
+         ORDER BY product_count DESC
+         LIMIT 10`,
+        [term]
+      ),
+    ]);
+
+    res.json({
+      products: productsResult.rows,
+      reviews: reviewsResult.rows,
+      reviewers: reviewersResult.rows,
+      categories: categoriesResult.rows,
+    });
+  } catch (error) {
+    console.error("Global search error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 module.exports = {
   createProduct,
   getProducts,
@@ -338,4 +406,5 @@ module.exports = {
   getCategories,
   saveProduct,
   unsaveProduct,
+  globalSearch,
 };
